@@ -4,6 +4,7 @@
          racket/date
          racket/file
          racket/string
+         racket/function
          unstable/contract
          web-server/servlet
          web-server/formlets
@@ -30,6 +31,7 @@
                   [type "text/css"]
                   [href "/style.css"])))
      (body
+      (h1 (a ([href "/"]) "WICS") " > " ,title)
       (div ([class "content"])
            ,@bodies)
       ,(footer)))))
@@ -49,6 +51,7 @@
               (form ([action ,k-url] [method "post"])
                     ,@(formlet-display the-formlet)
                     (input ([type "submit"] [value ,submit-text]))))))))
+  (redirect/get)
   (formlet-process the-formlet the-req))
 
 (define (page/login admin-pw req)
@@ -69,18 +72,88 @@
      (page/login admin-pw req)]))
 
 (define (page/admin events-path users-path req)
-  ;; XXX
-  (template "Admin"))
+  (define events
+    (sort (map path->string (directory-list events-path))
+          <= #:key (curry event-ctime events-path)))
+  (define users
+    (sort (map path->string (directory-list users-path))
+          string-ci<=?))
+  (send/suspend/dispatch
+   (λ (embed/url)
+     (template "Admin"
+               `(div ([id "admin"])
+                     (ul
+                      (li (a ([href ,(embed/url
+                                      (λ (req)
+                                        (page/admin/create events-path req)
+                                        (page/admin events-path users-path req)))])
+                             "Create an event"))))
+               `(h2 "Events")
+               `(table ([id "events"])
+                       (thead
+                        (tr
+                         (th "Name")
+                         (th "Password")
+                         (th "Creation Time")))
+                       (tbody
+                        ,@(for/list ([e (in-list events)])
+                            `(tr (td ,(event-name events-path e))
+                                 (td (tt ,e))
+                                 (td ,(date->string (seconds->date (event-ctime events-path e))))))))
+               `(h2 "Users")
+               `(table ([id "users"])
+                       (thead
+                        (tr
+                         (th "User")
+                         ,@(for/list ([e (in-list events)])
+                             `(th ,(event-name events-path e)))))
+                       (tbody
+                        ,@(for/list ([user (in-list users)])
+                            (define i ((make-user-info-f users-path user)))
+                            `(tr (td ,user)
+                                 ,@(for/list ([e (in-list events)])
+                                     (if (hash-ref i e #f)
+                                       `(td "Y")
+                                       `(td "N")))))))))))
+
+(define words 
+  (filter
+   (λ (s)
+     (and (regexp-match #rx"^[a-z]+$" s)
+          (> (string-length s) 5)))
+   (file->lines "/usr/share/dict/words")))
+(define how-many-words 
+  (length words))
+
+(define (generate-fresh-event-pw events-path)
+  (define trial (list-ref words (random how-many-words)))
+  (if (valid-event? events-path trial)
+    (generate-fresh-event-pw events-path)
+    trial))
+
+(define (page/admin/create events-path req)
+  (define ans
+    (single-text-box-page
+     "What is the name of the event?" "Register"
+     (λ (query)
+       (template
+        "Event Creation"
+        query))))
+  
+  (define e (generate-fresh-event-pw events-path))
+
+  (write-to-file (hash 'name ans
+                       'ctime (current-seconds))
+                 (build-path events-path e)))
 
 (define (valid-event? events-path s)
-  ;; XXX
-  #f)
-
+  (file-exists? (build-path events-path s)))
 (define (event-name events-path s)
-  ;; XXX
-  "XXX")
+  (hash-ref (file->value (build-path events-path s)) 'name))
+(define (event-ctime events-path s)
+  (hash-ref (file->value (build-path events-path s)) 'ctime))
 
-(define (page/normal events-path users-path user survey-pw survey-url req)
+(define (make-user-info-f users-path user)
   (define user-path (build-path users-path user))
 
   (define user-info-f
@@ -91,6 +164,12 @@
          (hash))]
       [(new-info)
        (write-to-file new-info user-path #:exists 'replace)]))
+
+  user-info-f)
+
+(define (page/normal events-path users-path user survey-pw survey-url req)
+  (define user-info-f
+    (make-user-info-f users-path user))
 
   (page/normal/survey user-info-f survey-pw survey-url req)
 
@@ -106,7 +185,7 @@
          (template
           "Registration"
           `(div ([id "register"])
-                (p "Please fill out the " 
+                (p "Please fill out the "
                    (a ([href ,survey-url]) "registration survey")
                    " to continue.")
                 (p "For your convenience, it is embedded below:")
@@ -171,7 +250,7 @@
    #:quit? #f
    #:launch-browser? #f
    #:extra-files-paths (list (build-path source-dir "static"))
-   #:servlet-regexp #rx""
+   #:servlet-regexp #rx"^[^\\.]*$"
    #:servlet-path "/"))
 
 (provide/contract
