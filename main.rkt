@@ -116,13 +116,13 @@
                                        `(td "Y")
                                        `(td "N")))))))))))
 
-(define words 
+(define words
   (filter
    (λ (s)
      (and (regexp-match #rx"^[a-z]+$" s)
           (> (string-length s) 5)))
    (file->lines "/usr/share/dict/words")))
-(define how-many-words 
+(define how-many-words
   (length words))
 
 (define (generate-fresh-event-pw events-path)
@@ -139,7 +139,7 @@
        (template
         "Event Creation"
         query))))
-  
+
   (define e (generate-fresh-event-pw events-path))
 
   (write-to-file (hash 'name ans
@@ -187,7 +187,9 @@
           `(div ([id "register"])
                 (p "Please fill out the "
                    (a ([href ,survey-url]) "registration survey")
-                   " to continue.")
+                   " to continue. "
+                   "(You will be given a registration password "
+                   "after you press 'Submit' for the survey.)")
                 (p "For your convenience, it is embedded below:")
 
                 (iframe ([src ,(format "~a?embedded=true" survey-url)]
